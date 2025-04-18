@@ -8,7 +8,7 @@ def calc_F1(TP: float,
             FP: float,
             FN: float) -> float:
     """
-    compute F1 score for a epoch of TP, TN, FP, FN
+    compute F1 score
     """
 
     precision = TP / (TP + FP + 1e-8)
@@ -16,19 +16,31 @@ def calc_F1(TP: float,
     F1 = 2 * precision * recall / (precision + recall + 1e-8)
     return F1
 
-def calc_AUC(mask_array, predict_array):
+def calc_AUC(mask_array: torch.Tensor,
+             predict_array: torch.Tensor):
     """
     compute AUC score
+    Args:
+        mask_array (torch.Tensor): ground truth, shape [h, w]
+        predict_array (torch.Tensor): predict array, shape [h, w]
+    Return:
+        auc metrics
     """
-    return auc(mask_array, predict_array)
+    assert len(mask_array.shape) == 2, \
+        "the shape of mask_array should be [h, w]"
+    assert len(predict_array.shape) == 2, \
+        "the shape of predict_array should be [h, w]"
+    m = mask_array.flatten()
+    p = predict_array.flatten()
+    return auc(m, p)
 
 def cal_confusion_matrix(gt_mask: torch.Tensor,
                          predict_mask: torch.Tensor) -> Dict[str, Any]:
     """
-    calculate a bathsize TP, TN, FP, FN
+    calculate  TP, TN, FP, FN for a image
     Args:
-        predict (torch.Tensor): predict mask, shape [b, h, w]
-        mask (torch.Tensor): ground truth, shape [b, h, w]
+        gt_mask (torch.Tensor): ground truth
+        predict_mask (torch.Tensor): predict mask
     Returns:
         metrics (Dict) :  TP, TN, FP, FN metrics
     """
@@ -38,60 +50,49 @@ def cal_confusion_matrix(gt_mask: torch.Tensor,
         "The value of predict should be 0 or 1"
     assert torch.all(torch.isin(gt_mask, torch.tensor([0, 1]))) ,\
         "The value of ground truth should be 0 or 1"
-    assert len(predict_mask.shape) == 3, \
-        "the shape of prediction should be [b, h, w]"
-    assert len(gt_mask.shape) == 3, \
-        "the shape of mask should be [b, h, w]"
+    assert len(gt_mask.shape) == 2, \
+        "the shape of mask should be [h, w]"
+    assert len(predict_mask.shape) == 2, \
+        "the shape of prediction should be [h, w]"
+
 
     return {
-        "TP": torch.sum(predict_mask * gt_mask, dim=(1, 2)),
-        "TN": torch.sum((1 - predict_mask) * (1 - gt_mask), dim=(1, 2)),
-        "FP": torch.sum(predict_mask * (1 - gt_mask), dim=(1, 2)),
-        "FN": torch.sum((1 - predict_mask) * gt_mask, dim=(1, 2))
+        "TP": torch.sum(predict_mask * gt_mask, dim=(0, 1)),
+        "TN": torch.sum((1 - predict_mask) * (1 - gt_mask), dim=(0, 1)),
+        "FP": torch.sum(predict_mask * (1 - gt_mask), dim=(0, 1)),
+        "FN": torch.sum((1 - predict_mask) * gt_mask, dim=(0, 1))
     }
 
 
 
 if __name__ == "__main__":
 
-    predict = torch.tensor([
+    predict = torch.tensor(
         [[1, 0, 1],
         [0, 1, 0],
         [1, 1, 0]]
-    ], dtype=torch.float32)
+    , dtype=torch.float32)
 
-    mask = torch.tensor([
+    mask = torch.tensor(
         [[1, 0, 0],
         [0, 1, 0],
         [0, 1, 0]]
-    ], dtype=torch.float32)
-    metrics = cal_confusion_matrix(predict, mask)
-    print("metrics1 : ",metrics)
+    , dtype=torch.float32)
+    confusion_matrix = cal_confusion_matrix(mask, predict)
+    print("metrics : ",confusion_matrix)
+    print("F1 score:", calc_F1(confusion_matrix["TP"],
+                               confusion_matrix["TN"],
+                               confusion_matrix["FP"],
+                               confusion_matrix["FN"]))
 
-    predict = torch.tensor([
-        [[1, 0, 1],
-        [0, 1, 0],
-        [1, 1, 0]],
-        [[1, 0, 1],
-        [1, 1, 1],
-        [1, 1, 0]]
-    ], dtype=torch.float32)
+    mask_array = torch.Tensor([[1, 1, 1, 0, 0],
+                               [1, 0, 0, 1, 1]])
+    predict_array = torch.Tensor([[0.9, 0.8, 0.6, 0.1, 0.4],
+                                  [0.7, 0.8, 0.7, 0.6, 0.9]])
+    print("auc value1", calc_AUC(mask_array, predict_array))
 
-    mask = torch.tensor([
-        [[1, 0, 0],
-        [1, 1, 0],
-        [0, 1, 0]],
-        [[1, 0, 0],
-        [0, 1, 0],
-        [0, 1, 0]]
-    ], dtype=torch.float32)
-    metrics = cal_confusion_matrix(predict, mask)
-    print("metrics2 : ",metrics)
-    print("F1 score:", calc_F1(metrics["TP"].sum(),
-                               metrics["TN"].sum(),
-                               metrics["FP"].sum(),
-                               metrics["FN"].sum()))
-
-    mask_array = [1, 1, 1, 1, 0, 0, 0, 0]
-    predict_array = [1, 0, 1, 1, 0, 1, 1, 0]
-    print("auc value", calc_AUC(mask_array, predict_array))
+    mask_array = torch.Tensor([[1, 1, 1, 1],
+                               [0, 0, 0, 0]])
+    predict_array = torch.Tensor([[1, 0, 1, 1],
+                                  [0, 1, 1, 0]])
+    print("auc value2", calc_AUC(mask_array, predict_array))
