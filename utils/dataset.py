@@ -41,6 +41,7 @@ def data_names(dir:str,
         f"dataset {dir}'s gt is not exists"
     assert DATA_PATH.joinpath(dir, "tp").exists(), \
         f"dataset {dir}'s tp is not exists"
+
     gt_dir = DATA_PATH.joinpath(dir, "gt")
     tp_dir = DATA_PATH.joinpath(dir, "tp")
     # gt_items dict { gt_item.stem : gt_item.suffix}
