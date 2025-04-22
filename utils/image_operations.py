@@ -55,6 +55,8 @@ if __name__ == "__main__":
     """
     test
     """
+    import os
+    os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
     tp = Path(__file__).parent.parent.joinpath("data", "simple","tp", "Sp_D_CND_A_pla0005_pla0023_0281.jpg")
     gt = Path(__file__).parent.parent.joinpath("data", "simple","gt", "Sp_D_CND_A_pla0005_pla0023_0281_gt.png")
     tp_array = np.array(pil_loader(str(tp), "RGB"))
