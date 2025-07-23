@@ -1,1 +1,1 @@
-a template to image tampering localization
+a template to Image Manipulation Detection & Localization
