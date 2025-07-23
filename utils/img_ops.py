@@ -1,77 +1,50 @@
 from PIL import Image
 import numpy as np
 import albumentations as albu
+from typing import Tuple, Optional
 
-def data_augmentation(aug_p=1):
-    """
-    Randomly applying an image augmentation method to images
-    based on probability aug_p;
 
-    augmentation : target
-    jpeg_compression or gaussian_blur :only image
-    vertical_flip or horizontal_flip  :image and mask both
-    """
-    jpeg_compression = albu.ImageCompression(quality_range=(70, 100), p=1)
-    gaussian_blur = albu.GaussianBlur(blur_limit=(3, 7), p=1)
-    vertical_flip = albu.VerticalFlip(p=1)
-    horizontal_flip = albu.HorizontalFlip(p=1)
-    return albu.OneOf([jpeg_compression, gaussian_blur,
-                       vertical_flip, horizontal_flip], p=aug_p)
-
-def padzero(scale_size=512,
-            output_height=512,
-            output_width=512)-> albu.Compose:
-    """
-    Adjust the scale of the image
-    to make the maximum edge equal to the x_size,
-    while maintaining the aspect ratio of the original image.
-    Then fill the size of the image to the output_height, output_width
-    """
-    return albu.Compose([
-        albu.LongestMaxSize(max_size=scale_size),
-        albu.PadIfNeeded(min_height=output_height,
-                         min_width=output_width,
-                         border_mode=0,
-                         position= 'top_left')
-        ])
-
-def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
-    row, col, ch = rgba.shape
-
-    rgb = np.zeros((row, col, 3), dtype='float32')
-    r, g, b, a = rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2], rgba[:, :, 3]
-
-    a = np.asarray(a, dtype='float32') / 255.0
-
-    R, G, B = background
-
-    rgb[:, :, 0] = r * a + (1.0 - a) * R
-    rgb[:, :, 1] = g * a + (1.0 - a) * G
-    rgb[:, :, 2] = b * a + (1.0 - a) * B
-
-    return np.asarray(rgb, dtype='uint8')
-
-def augs_default():
+def augs_default(prob_Spatial=0.5, prob_Pixel=0.2, resize: Optional[Tuple[int, int]] = None):
     # geometric transform
-    vertical_flip = albu.VerticalFlip(p=0.5)
-    horizontal_flip = albu.HorizontalFlip(p=0.5)
-    rotate = albu.RandomRotate90(p=0.5)
+    rotate = albu.RandomRotate90(p=prob_Spatial)
+    vertical_flip = albu.VerticalFlip(p=prob_Spatial)
+    horizontal_flip = albu.HorizontalFlip(p=prob_Spatial)
     # Pixel transforms
-    jpeg_compression = albu.ImageCompression(quality_range=(70, 100), p=0.2)
-    gaussian_blur = albu.GaussianBlur(blur_limit=(3, 7), p=0.2)
+    jpeg_compression = albu.ImageCompression(quality_range=(70, 100), p=prob_Pixel)
+    gaussian_blur = albu.GaussianBlur(blur_limit=(3, 7), p=prob_Pixel)
+    # resize transform
+    crop = albu.Resize(height=resize[0], width=resize[1], p=1.0) if resize else albu.NoOp(p=1.0)
     return albu.Compose([
-
+        rotate,
+        vertical_flip,
+        horizontal_flip,
+        jpeg_compression,
+        gaussian_blur,
+        crop,
     ])
 
 def postprocess(transform : albu.Compose):
-    def wrapper(img:Image.Image, mask:Image.Image):
-        img_array = np.array(img)
-        mask_array = np.array(mask)
-        if img_array.shape[-1] == 4:
-            img_array = rgba2rgb(img_array)
+    def wrapper(img_array:np.ndarray, mask_array:np.ndarray):
+        """
+        args:
+            img (np.ndarray): input image
+            mask (np.ndarray): input mask
+        returns:
+            img_transformed (np.ndarray): transformed image
+            mask_transformed (np.ndarray): transformed "prob" mask
 
+        """
+        # Apply the transformations
         transformed = transform(image=img_array, mask=mask_array)
+        img_transformed = transformed['image']
+        mask_transformed = transformed['mask']
 
+        # Convert mask to probability mask
+        if mask_transformed.max() > 1.0:
+            mask_transformed = mask_transformed.astype(np.float32) / 255.0
+            mask_transformed[mask_transformed > 0.5] = 1.0
+            mask_transformed[mask_transformed <= 0.5] = 0.0
+        return img_transformed, mask_transformed
     return wrapper
 
 
@@ -80,6 +53,29 @@ if __name__ == "__main__":
     """
     test
     """
-    import os
-    os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
+    from utils.dataset import ImageDataset
+    import matplotlib.pyplot as plt
+    dataset = ImageDataset(r"./data/simple")
+    print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
+    img, mask = dataset[1]
+    images = [img, mask]
+    titles = ['Image', 'Mask']
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))
+    print(f"img shape:{img.shape}")
+    print(f"mask shape:{mask.shape}")
+    postprocess_fn = postprocess(augs_default(prob_Spatial=1, prob_Pixel=1, resize=(256,256)))
+    img, mask = postprocess_fn(img, mask)
+    images.append(img)
+    images.append(mask)
+    titles.append('Transformed Image')
+    titles.append('Transformed prob Mask')
+    print("=================================================")
+    for ax, img, title in zip(axes.flatten(), images, titles):
+        img_array = np.asarray(img)
+        print(f"{title} shape: {img_array.shape}, pixel range: {img_array.min()} - {img_array.max()}")
+        ax.imshow(img_array, cmap='gray')
+        ax.set_title(title)
+        ax.axis('off')
+    plt.tight_layout()
+    plt.show()
 

@@ -5,13 +5,30 @@ import pathlib
 import json
 import numpy as np
 
+def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
+    row, col, ch = rgba.shape
+
+    rgb = np.zeros((row, col, 3), dtype='float32')
+    r, g, b, a = rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2], rgba[:, :, 3]
+
+    a = np.asarray(a, dtype='float32') / 255.0
+
+    R, G, B = background
+
+    rgb[:, :, 0] = r * a + (1.0 - a) * R
+    rgb[:, :, 1] = g * a + (1.0 - a) * G
+    rgb[:, :, 2] = b * a + (1.0 - a) * B
+
+    return np.asarray(rgb, dtype='uint8')
+
+
 class ImageDataset(Dataset):
     """
     A dataset class for loading images and their corresponding masks from a directory structure.
     """
     def __init__(self, path:Union[str, pathlib.Path],
                  pre_check:bool=True,
-                 postprocess: Optional[Callable[[Image.Image, Image.Image],
+                 postprocess: Optional[Callable[[np.ndarray, np.ndarray],
                                                Tuple[np.ndarray, np.ndarray]]] = None):
         """
         Args:
@@ -62,10 +79,7 @@ class ImageDataset(Dataset):
         Args:
             idx (int): Index of the item to retrieve
         Returns:
-            1. No postprocess
-            Tuple[Image.Image, Image.Image]: A tuple containing the image and its corresponding mask
-            2. Postprocess
-            Tuple[np.ndarray, np.ndarray]: A tuple containing the processed image and mask as numpy arrays
+            Tuple[np.ndarray, np.ndarray]: Transformed image and mask
         """
         # Load the image and mask
         img_path = self.path.joinpath("tp", self.data_list[idx]["tp"])
@@ -73,7 +87,7 @@ class ImageDataset(Dataset):
 
         try:
             img = Image.open(img_path)
-            mask = Image.open(mask_path)
+            mask = Image.open(mask_path).convert("L")  # Convert mask to grayscale
         except FileNotFoundError as e:
             print(f"File not found: {img_path} or {mask_path}")
             raise e
@@ -81,19 +95,26 @@ class ImageDataset(Dataset):
             print(f"Error loading image or mask: {e}")
             raise e
 
+        # Convert images to numpy arrays
+        mask_array = np.array(mask)
+        if img.mode == 'RGBA':
+            img.load()  # Ensure the image is loaded
+            img_array = rgba2rgb(np.array(img))
+        else:
+            img = img.convert("RGB")
+            img_array = np.array(img)
         if self.postprocess:
-            img, mask = self.postprocess(img, mask)
-
-        return img, mask
+            img_array, mask_array = self.postprocess(img_array, mask_array)
+        return img_array, mask_array
 
 if __name__ == "__main__":
     # Example usage
     dataset = ImageDataset(r"./data/simple")
     print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
     img, mask = dataset[0]
-    if isinstance(img, Image.Image):
-        print(f"img size:{img.size}, img channel:{img.getbands()}")
-        img.show()
-    if isinstance(mask, Image.Image):
-        print(f"img size:{mask.size}, img channel:{mask.getbands()}")
-        mask.show()
+    print(f"img shape:{img.shape}, img dtype:{img.dtype}")
+    img = Image.fromarray(img)
+    img.show()
+    print(f"mask shape:{mask.shape}, mask dtype:{mask.dtype}")
+    mask = Image.fromarray(mask)
+    mask.show()
