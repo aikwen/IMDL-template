@@ -1,11 +1,11 @@
 images1
 ├─gt/
 └─tp/
-└─gt.json(optional)
+└─imges1.json
 
 images2
 ├─gt/
 └─tp/
-└─gt.json(optional)
+└─imges2.json
 
 ....

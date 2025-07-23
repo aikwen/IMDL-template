@@ -1,76 +1,99 @@
-from pathlib import Path
-from typing import Callable, Tuple, List, Dict, Union
+from PIL import Image
+from torch.utils.data import Dataset
+from typing import Union, Dict, Optional, Callable, Tuple
+import pathlib
 import json
-from pprint import pprint
+import numpy as np
 
-ROOT_PATH = Path(__file__).parent.parent
-DATA_PATH = ROOT_PATH.joinpath("data")
-
-def pattern_coverage(tp: str,)-> str:
-    return f"{tp[:-1]}forged"
-
-def pattern_casia(tp: str)->str:
-    return f"{tp}_gt"
-
-def pattern_nist16(tp: str, gt_json:dict) -> str:
-    return gt_json[tp]
-
-def pattern_columbia(tp: str):
-    pass
-
-def load_json(path:str) -> Union[List, Dict, None]:
-    if not Path(path).exists():
-        return None
-
-    with open(path, "r", encoding="utf-8") as file:
-        gt_json = json.load(file)
-    return gt_json
-
-def data_names(dir:str,
-              pattern:Callable[..., str]) -> Tuple[List[str], List[str]]:
+class ImageDataset(Dataset):
     """
-    Args:
-        dir (str):  the dataset in the data directory
-        pattern (Callable): the name correspondence pattern between tp and gt
-    Returns:
-        tp (list), gt (list)
+    A dataset class for loading images and their corresponding masks from a directory structure.
     """
-    assert DATA_PATH.joinpath(dir).exists(), \
-        f"dataset {dir} is not exists"
-    assert DATA_PATH.joinpath(dir, "gt").exists(), \
-        f"dataset {dir}'s gt is not exists"
-    assert DATA_PATH.joinpath(dir, "tp").exists(), \
-        f"dataset {dir}'s tp is not exists"
+    def __init__(self, path:Union[str, pathlib.Path],
+                 pre_check:bool=True,
+                 postprocess: Optional[Callable[[Image.Image, Image.Image],
+                                               Tuple[np.ndarray, np.ndarray]]] = None):
+        """
+        Args:
+            path (Union[str, pathlib.Path]): Path to the directory containing the dir gt, pt and json
+        """
+        assert isinstance(path, (str, pathlib.Path)), "Path must be a string or pathlib.Path object"
+        assert pathlib.Path(path).is_dir(), "Provided path must be a directory"
 
-    gt_dir = DATA_PATH.joinpath(dir, "gt")
-    tp_dir = DATA_PATH.joinpath(dir, "tp")
-    # gt_items dict { gt_item.stem : gt_item.suffix}
-    gt_items = {gt_item.stem:gt_item.suffix for gt_item in gt_dir.iterdir()}
-    # load json
-    gt_json = load_json(str(DATA_PATH.joinpath(dir, "gt.json")))
-    gt_names = []
-    tp_names = []
-    for tp_item in tp_dir.iterdir():
-        if gt_json != None:
-            gt_stem = pattern(tp_item.stem, gt_json)
-        else:
-            gt_stem = pattern(tp_item.stem)
-        suffix = gt_items.get(gt_stem, ".invalid")
-        assert suffix != ".invalid", \
-            f"No matching gt file {gt_stem} found for tp file {tp_item.name} in {dir}"
-        gt_names.append(f"{gt_stem}{suffix}")
-        tp_names.append(tp_item.name)
-    return tp_names, gt_names
+        self.path = pathlib.Path(path)
+        self.dataset_name = self.path.name
+        self.dataset_json = self.path.joinpath(f"{self.dataset_name}.json")
 
+        assert self.dataset_json.exists(), "JSON file for dataset metadata does not exist"
+
+        self.data_list:list[Dict] = []
+
+        try:
+            with open(self.dataset_json, 'r', encoding='utf-8') as f:
+                self.data_list = json.load(f)
+        except Exception as e:
+            print(f"Error loading dataset {self.dataset_name}: {e}")
+
+        # check the data validity
+        if pre_check:
+            self.preCheck()
+
+        self.postprocess = postprocess
+
+    def preCheck(self):
+        """
+        Pre-check the dataset for missing files and metadata
+        """
+        for item in self.data_list:
+            if not item.get("tp") or not item.get("gt"):
+                raise ValueError(f"Missing 'tp' or 'gt' key in dataset item: {item}")
+            if not self.path.joinpath("tp", item["tp"]).exists():
+                raise FileNotFoundError(f"Image file {item['tp']} does not exist in {self.path.joinpath('tp')}")
+            if not self.path.joinpath("gt", item["gt"]).exists():
+                raise FileNotFoundError(f"Mask file {item['gt']} does not exist in {self.path.joinpath('gt')}")
+        print(f"load dataset {self.dataset_name} successfully.")
+
+
+    def __len__(self):
+        return len(self.data_list)
+
+    def __getitem__(self, idx):
+        """
+        Args:
+            idx (int): Index of the item to retrieve
+        Returns:
+            1. No postprocess
+            Tuple[Image.Image, Image.Image]: A tuple containing the image and its corresponding mask
+            2. Postprocess
+            Tuple[np.ndarray, np.ndarray]: A tuple containing the processed image and mask as numpy arrays
+        """
+        # Load the image and mask
+        img_path = self.path.joinpath("tp", self.data_list[idx]["tp"])
+        mask_path = self.path.joinpath("gt", self.data_list[idx]["gt"])
+
+        try:
+            img = Image.open(img_path)
+            mask = Image.open(mask_path)
+        except FileNotFoundError as e:
+            print(f"File not found: {img_path} or {mask_path}")
+            raise e
+        except Exception as e:
+            print(f"Error loading image or mask: {e}")
+            raise e
+
+        if self.postprocess:
+            img, mask = self.postprocess(img, mask)
+
+        return img, mask
 
 if __name__ == "__main__":
-    """
-    test
-    """
-    tp, gt = data_names("coverage", pattern_coverage)
-    print(tp[:10], len(tp))
-    print(gt[:10], len(gt))
-
-    tp, gt = data_names("casia_v1", pattern_casia)
-    pprint(tp[:10])
-    pprint(gt[:10])
+    # Example usage
+    dataset = ImageDataset(r"./data/simple")
+    print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
+    img, mask = dataset[0]
+    if isinstance(img, Image.Image):
+        print(f"img size:{img.size}, img channel:{img.getbands()}")
+        img.show()
+    if isinstance(mask, Image.Image):
+        print(f"img size:{mask.size}, img channel:{mask.getbands()}")
+        mask.show()
