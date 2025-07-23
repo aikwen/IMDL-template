@@ -1,22 +1,6 @@
 from PIL import Image
 import numpy as np
-from pathlib import Path
-from typing import Literal
 import albumentations as albu
-
-def pil_loader(path: str, mode: Literal["RGB", "L"]) -> Image.Image:
-    """PIL image loader
-    Args:
-        path (str): image path
-    Returns:
-        Image.Image: PIL image (after np.array(x) becomes [0,255] int8)
-    """
-    assert Path(path).exists(), \
-        "pil load image error, the path is not exits()"
-    assert mode in {"RGB", "L"}, \
-        "pil load mode error"
-    img = Image.open(path)
-    return img.convert(mode=mode)
 
 def data_augmentation(aug_p=1):
     """
@@ -51,25 +35,51 @@ def padzero(scale_size=512,
                          position= 'top_left')
         ])
 
+def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
+    row, col, ch = rgba.shape
+
+    rgb = np.zeros((row, col, 3), dtype='float32')
+    r, g, b, a = rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2], rgba[:, :, 3]
+
+    a = np.asarray(a, dtype='float32') / 255.0
+
+    R, G, B = background
+
+    rgb[:, :, 0] = r * a + (1.0 - a) * R
+    rgb[:, :, 1] = g * a + (1.0 - a) * G
+    rgb[:, :, 2] = b * a + (1.0 - a) * B
+
+    return np.asarray(rgb, dtype='uint8')
+
+def augs_default():
+    # geometric transform
+    vertical_flip = albu.VerticalFlip(p=0.5)
+    horizontal_flip = albu.HorizontalFlip(p=0.5)
+    rotate = albu.RandomRotate90(p=0.5)
+    # Pixel transforms
+    jpeg_compression = albu.ImageCompression(quality_range=(70, 100), p=0.2)
+    gaussian_blur = albu.GaussianBlur(blur_limit=(3, 7), p=0.2)
+    return albu.Compose([
+
+    ])
+
+def postprocess(transform : albu.Compose):
+    def wrapper(img:Image.Image, mask:Image.Image):
+        img_array = np.array(img)
+        mask_array = np.array(mask)
+        if img_array.shape[-1] == 4:
+            img_array = rgba2rgb(img_array)
+
+        transformed = transform(image=img_array, mask=mask_array)
+
+    return wrapper
+
+
+
 if __name__ == "__main__":
     """
     test
     """
     import os
     os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
-    tp = Path(__file__).parent.parent.joinpath("data", "simple","tp", "Sp_D_CND_A_pla0005_pla0023_0281.jpg")
-    gt = Path(__file__).parent.parent.joinpath("data", "simple","gt", "Sp_D_CND_A_pla0005_pla0023_0281_gt.png")
-    tp_array = np.array(pil_loader(str(tp), "RGB"))
-    gt_array = np.array(pil_loader(str(gt), "L"))
-    print("tp shape:",tp_array.shape, "gt_shape",gt_array.shape)
-    img = data_augmentation()(image = tp_array, mask=gt_array)
-    res_tp = Image.fromarray(img['image'])
-    res_gt = Image.fromarray(img['mask'])
-    print("mask:", img['mask'].shape,(img['mask'] == gt_array).all())
-    print("image:", img['image'].shape, (img['image'] == tp_array).all())
-    img_pad = padzero()(image=img['image'], mask=img['mask'])
-    res_tp = Image.fromarray(img_pad['image'])
-    res_gt = Image.fromarray(img_pad['mask'])
-    res_tp.save("res_tp.jpg")
-    res_gt.save("res_gt.png")
 
