@@ -57,7 +57,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     dataset = ImageDataset(r"./data/simple")
     print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
-    img, mask = dataset[1]
+    img, mask = dataset[2]
     images = [img, mask]
     titles = ['Image', 'Mask']
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))

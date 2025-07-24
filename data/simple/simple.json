@@ -6,5 +6,9 @@
     {
         "gt":"Sp_D_CND_A_pla0005_pla0023_0281_gt.png",
         "tp":"Sp_D_CND_A_pla0005_pla0023_0281.jpg"
+    },
+    {
+        "gt":"",
+        "tp":"COCO_train2014_000000000009.jpg"
     }
 ]
