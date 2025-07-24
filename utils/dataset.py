@@ -5,6 +5,7 @@ import pathlib
 import json
 import numpy as np
 import random
+import tqdm
 
 def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
     row, col, ch = rgba.shape
@@ -73,7 +74,7 @@ class ImageDataset(Dataset):
         1. Check if the 'tp' and 'gt' keys exist in each item
         2. Check if the image and mask files exist in the specified directories
         """
-        for item in self.dataset_list:
+        for item in tqdm.tqdm(self.dataset_list, desc="Checking dataset validity", ascii=True):
             if "tp" not in item or "gt" not in item:
                 raise ValueError(f"Missing 'tp' or 'gt' key in dataset item: {item}")
             if not self.path.joinpath("tp", item["tp"]).exists():
@@ -81,7 +82,6 @@ class ImageDataset(Dataset):
             if not self.path.joinpath("gt", item["gt"]).exists() and item["gt"] != "":
                 raise FileNotFoundError(f"Mask file {item['gt']} does not exist in {self.path.joinpath('gt')}")
         print(f"load dataset {self.dataset_name} successfully.")
-
 
     def init_dataset(self):
         """
