@@ -6,6 +6,7 @@ import json
 import numpy as np
 import random
 import tqdm
+import torch
 
 def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
     row, col, ch = rgba.shape
@@ -149,7 +150,10 @@ class ImageDataset(Dataset):
             img_array = np.array(img)
         if self.postprocess:
             img_array, mask_array = self.postprocess(img_array, mask_array)
-        return img_array, mask_array
+        # to tensor
+        img_tensor = torch.tensor(img_array, dtype=torch.float32).permute(2, 0, 1)  # Convert to CxHxW
+        mask_tensor = torch.tensor(mask_array, dtype=torch.float32)
+        return img_tensor, mask_tensor
 
 if __name__ == "__main__":
     # Example usage
@@ -157,8 +161,8 @@ if __name__ == "__main__":
     print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
     img, mask = dataset[0]
     print(f"img shape:{img.shape}, img dtype:{img.dtype}")
-    img = Image.fromarray(img)
+    img = Image.fromarray(img.permute(1, 2, 0).byte().numpy())
     img.show()
     print(f"mask shape:{mask.shape}, mask dtype:{mask.dtype}")
-    mask = Image.fromarray(mask)
+    mask = Image.fromarray(mask.byte().numpy())
     mask.show()

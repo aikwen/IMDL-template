@@ -15,12 +15,12 @@ def augs_default(prob_Spatial=0.5, prob_Pixel=0.2, resize: Optional[Tuple[int, i
     # resize transform
     crop = albu.Resize(height=resize[0], width=resize[1], p=1.0) if resize else albu.NoOp(p=1.0)
     return albu.Compose([
+        crop,
         rotate,
         vertical_flip,
         horizontal_flip,
         jpeg_compression,
         gaussian_blur,
-        crop,
     ])
 
 def postprocess(transform : albu.Compose):
@@ -57,25 +57,29 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     dataset = ImageDataset(r"./data/simple")
     print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
-    img, mask = dataset[2]
-    images = [img, mask]
-    titles = ['Image', 'Mask']
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))
-    print(f"img shape:{img.shape}")
-    print(f"mask shape:{mask.shape}")
-    postprocess_fn = postprocess(augs_default(prob_Spatial=1, prob_Pixel=1, resize=(256,256)))
-    img, mask = postprocess_fn(img, mask)
-    images.append(img)
-    images.append(mask)
-    titles.append('Transformed Image')
-    titles.append('Transformed prob Mask')
-    print("=================================================")
-    for ax, img, title in zip(axes.flatten(), images, titles):
-        img_array = np.asarray(img)
-        print(f"{title} shape: {img_array.shape}, pixel range: {img_array.min()} - {img_array.max()}")
-        ax.imshow(img_array, cmap='gray')
-        ax.set_title(title)
-        ax.axis('off')
-    plt.tight_layout()
-    plt.show()
+    for i in range(len(dataset)):
+        img, mask = dataset[i]
+        img = img.permute(1, 2, 0).byte().numpy()
+        mask = mask.byte().numpy()
+        images = [img, mask]
+
+        titles = ['Image', 'Mask']
+        fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))
+        print(f"img {i} shape:{img.shape}")
+        print(f"mask {i} shape:{mask.shape}")
+        postprocess_fn = postprocess(augs_default(prob_Spatial=1, prob_Pixel=1, resize=(256,256)))
+        img, mask = postprocess_fn(img, mask)
+        images.append(img)
+        images.append(mask)
+        titles.append('Transformed Image')
+        titles.append('Transformed prob Mask')
+        print("=================================================")
+        for ax, img, title in zip(axes.flatten(), images, titles):
+            img_array = np.asarray(img)
+            print(f"{i}: {title} shape: {img_array.shape}, pixel range: {img_array.min()} - {img_array.max()}")
+            ax.imshow(img_array, cmap='gray')
+            ax.set_title(title)
+            ax.axis('off')
+        plt.tight_layout()
+        plt.show()
 
