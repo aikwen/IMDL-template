@@ -1,11 +1,10 @@
 from PIL import Image
 from torch.utils.data import Dataset
-from typing import Union, Dict, Optional, Callable, Tuple
+from typing import Union, Dict, List, Optional
+import albumentations as albu
 import pathlib
 import json
 import numpy as np
-import random
-import tqdm
 import torch
 
 def rgba2rgb(rgba:np.ndarray, background=(255, 255, 255)):
@@ -30,83 +29,44 @@ class ImageDataset(Dataset):
     A dataset class for loading images and their corresponding masks from a directory structure.
     """
     def __init__(self, path:Union[str, pathlib.Path],
-                 pre_check:bool=True,
-                 split_ratio:float = 1.0,
-                 seed:Optional[int] = None,
-                 postprocess: Optional[Callable[[np.ndarray, np.ndarray],
-                                               Tuple[np.ndarray, np.ndarray]]] = None):
+                 transform:Optional[albu.Compose]=None):
         """
         Args:
-            path (Union[str, pathlib.Path]): Path to the directory containing the dir gt, pt and json
-            pre_check (bool): Whether to perform pre-checks on the dataset
-            split_ratio (float): Ratio of the dataset to use, default is 1 (use
-                the entire dataset)
+            path (Union[str, pathlib.Path]):  包含 gt文件夹, pt文件夹 and json 文件的文件夹路径
             postprocess (Optional[Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]]):
                 A function to post-process the images and masks after loading.
         """
-        assert isinstance(split_ratio, float) and 0 < split_ratio <= 1.0, "split_ratio must be a float between 0 and 1"
-
-        self.split_ratio = split_ratio
-        self.seed = seed
-
-        assert isinstance(path, (str, pathlib.Path)), "Path must be a string or pathlib.Path object"
-        assert pathlib.Path(path).is_dir(), "Provided path must be a directory"
-
+        self.__check(path)
         self.path = pathlib.Path(path)
+        # 数据集名称
         self.dataset_name = self.path.name
+        # 数据集 json 文件
         self.dataset_json = self.path.joinpath(f"{self.dataset_name}.json")
-
-        assert self.dataset_json.exists(), "JSON file for dataset metadata does not exist"
-
-        self.postprocess = postprocess
-
-        # Initialize the dataset list and number of items
-        self.dataset_list:list[Dict] = []
+        # 数据集列表
+        self.dataset_list:List[Dict] = []
         self.dataset_num:int = 0
-        self.init_dataset()
 
-        # check the data validity
-        if pre_check:
-            self.preCheck()
+        self.transform = transform
+        # 初始化数据集列表
+        self.__dataList()
 
-    def preCheck(self):
-        """
-        pre-check the dataset for validity:
-        1. Check if the 'tp' and 'gt' keys exist in each item
-        2. Check if the image and mask files exist in the specified directories
-        """
-        for item in tqdm.tqdm(self.dataset_list, desc="Checking dataset validity", ascii=True):
-            if "tp" not in item or "gt" not in item:
-                raise ValueError(f"Missing 'tp' or 'gt' key in dataset item: {item}")
-            if not self.path.joinpath("tp", item["tp"]).exists():
-                raise FileNotFoundError(f"Image file {item['tp']} does not exist in {self.path.joinpath('tp')}")
-            if not self.path.joinpath("gt", item["gt"]).exists() and item["gt"] != "":
-                raise FileNotFoundError(f"Mask file {item['gt']} does not exist in {self.path.joinpath('gt')}")
-        print(f"load dataset {self.dataset_name} successfully.")
+    def __check(self, path):
+        assert isinstance(path, (str, pathlib.Path)), f"{path} 必须是 string 或者 pathlib.Path 类型"
+        p = pathlib.Path(path)
+        assert p.is_dir(), f"{path} 文件夹不存在"
+        assert p.joinpath("gt").is_dir(), f"{path} 的 gt 文件夹不存在"
+        assert p.joinpath("tp").is_dir(), f"{path} 的 tp 文件夹不存在"
+        assert p.joinpath(f"{p.name}.json").is_file(), f"{path} 的 json 文件不存在"
+        del p
 
-    def init_dataset(self):
-        """
-        1. Initialize the dataset by loading the metadata from the JSON file and checking the files
-        2. shuffle the dataset if seed is provided
-        3. split the dataset if split_ratio is less than 1.0
-        """
-
-        # Load the dataset metadata from JSON file
+    def __dataList(self):
+        # 加载数据集 json 文件
         try:
             with open(self.dataset_json, 'r', encoding='utf-8') as f:
                 self.dataset_list = json.load(f)
         except Exception as e:
-            print(f"Error loading dataset {self.dataset_name}: {e}")
+            print(f"数据集 {self.dataset_name} json 文件加载错误 : {e}")
 
-        # shuffle the dataset
-        if self.seed is not None:
-            random.seed(self.seed)
-            random.shuffle(self.dataset_list)
-
-        # split the dataset if split_ratio is less than 1.0
-        if self.split_ratio < 1.0:
-            split_index = int(len(self.dataset_list) * self.split_ratio)
-            self.dataset_list = self.dataset_list[:split_index]
         self.dataset_num = len(self.dataset_list)
 
     def __len__(self):
@@ -115,54 +75,75 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx):
         """
         Args:
-            idx (int): Index of the item to retrieve
+            idx (int): 对应的下标
         Returns:
-            Tuple[np.ndarray, np.ndarray]: Transformed image and mask
+            Tuple[Tensor, Tensor, tp_name, gt_name]:
+            tp tensor, gt tensor, tp 图像名， gt 图像名
         """
-        # Load the image and mask
-        img_path = self.path.joinpath("tp", self.dataset_list[idx]["tp"])
-        if self.dataset_list[idx]["gt"] == "":
-            mask_path = None
-        else:
-            mask_path = self.path.joinpath("gt", self.dataset_list[idx]["gt"])
+        # 加载对应 idx 的 tp、gt 图像路径
+        tp_path = self.path.joinpath("tp", self.dataset_list[idx]["tp"])
+        tp_name, gt_name = tp_path.name, ""
 
+        if self.dataset_list[idx]["gt"] == "":
+            gt_path = None
+        else:
+            gt_path = self.path.joinpath("gt", self.dataset_list[idx]["gt"])
+            gt_name = gt_path.name
+
+        # 加载图像
         try:
-            img = Image.open(img_path)
-            if mask_path is not None:
-                mask = Image.open(mask_path).convert("L")  # Convert mask to grayscale
+            tp_img = Image.open(tp_path)
+            # 判断 gt 图像是否存在，如果不存在那么就生成一张全黑色图像
+            if gt_path is not None:
+                gt_img = Image.open(gt_path).convert("L")  # Convert mask to grayscale
             else:
-                mask_array = np.zeros(img.size, dtype=np.uint8)
-                mask = Image.fromarray(mask_array)
+                gt_img = Image.fromarray(np.zeros(tp_img.size, dtype=np.uint8))
         except FileNotFoundError as e:
-            print(f"File not found: {img_path} or {mask_path}")
+            print(f"File not found: {tp_path} or {gt_path}")
             raise e
         except Exception as e:
             print(f"Error loading image or mask: {e}")
             raise e
 
-        # Convert images to numpy arrays
-        mask_array = np.array(mask)
-        if img.mode == 'RGBA':
-            img.load()  # Ensure the image is loaded
-            img_array = rgba2rgb(np.array(img))
+        # 获取图像矩阵
+        gt_array = np.array(gt_img)
+        if tp_img.mode == 'RGBA':
+            tp_img.load()  # 确保图像被加载
+            tp_array = rgba2rgb(np.array(tp_img))
         else:
-            img = img.convert("RGB")
-            img_array = np.array(img)
-        if self.postprocess:
-            img_array, mask_array = self.postprocess(img_array, mask_array)
+            tp_img = tp_img.convert("RGB")
+            tp_array = np.array(tp_img)
+
+        # 对 tp， gt 矩阵进行一些增强
+        if self.transform:
+            transformed = self.transform(image=tp_array, mask=gt_array)
+            tp_array = transformed['image']
+            gt_array = transformed['mask']
+
+        # 将 gt 矩阵变成概率矩阵
+        if gt_array.max() > 1.0:
+            gt_array = gt_array.astype(np.float32) / 255.0
+            gt_array[gt_array > 0.5] = 1.0
+            gt_array[gt_array <= 0.5] = 0.0
+
         # to tensor
-        img_tensor = torch.tensor(img_array, dtype=torch.float32).permute(2, 0, 1)  # Convert to CxHxW
-        mask_tensor = torch.tensor(mask_array, dtype=torch.float32)
-        return img_tensor, mask_tensor
+        tp_tensor = torch.tensor(tp_array, dtype=torch.float32).permute(2, 0, 1)  # Convert to CxHxW
+        gt_tensor = torch.tensor(gt_array, dtype=torch.float32)
+        return tp_tensor, gt_tensor, tp_name, gt_name
 
 if __name__ == "__main__":
     # Example usage
+    import matplotlib.pyplot as plt
     dataset = ImageDataset(r"./data/simple")
     print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
-    img, mask = dataset[0]
+    img, mask, img_name, mask_name = dataset[0]
+    print(img_name, mask_name)
     print(f"img shape:{img.shape}, img dtype:{img.dtype}")
-    img = Image.fromarray(img.permute(1, 2, 0).byte().numpy())
-    img.show()
-    print(f"mask shape:{mask.shape}, mask dtype:{mask.dtype}")
-    mask = Image.fromarray(mask.byte().numpy())
-    mask.show()
+    img_display = img.permute(1, 2, 0).numpy().astype(np.uint8)
+    mask_display = mask.numpy()
+    fig, ax = plt.subplots(1, 2, figsize=(15, 10))
+    ax[0].imshow(img_display)
+    ax[0].set_title(img_name)
+    ax[1].imshow(mask_display, cmap='gray')
+    ax[1].set_title(mask_name)
+    plt.show()

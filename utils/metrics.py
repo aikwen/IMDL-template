@@ -6,8 +6,8 @@ from sklearn.metrics import roc_auc_score
 class PixelF1():
     def __init__(self):
         pass
-
-    def confuse_matrix(self, gt_prob_batch: torch.Tensor, predict_prob_batch: torch.Tensor):
+    @staticmethod
+    def confuse_matrix(gt_prob_batch: torch.Tensor, predict_prob_batch: torch.Tensor):
         """
         Calculate the confusion matrix for pixel-wise F1 score for a batch of images.
         Args:
@@ -22,18 +22,20 @@ class PixelF1():
             FP (False Positive): Pixels incorrectly predicted as positive
             FN (False Negative): Pixels incorrectly predicted as negative
         """
+        assert gt_prob_batch.shape == predict_prob_batch.shape, \
+            "Ground truth and predicted probability batches must have the same shape"
         return {
             "TP": torch.sum(predict_prob_batch * gt_prob_batch, dim=(1, 2, 3)),
             "TN": torch.sum((1 - predict_prob_batch) * (1 - gt_prob_batch), dim=(1, 2, 3)),
             "FP": torch.sum(predict_prob_batch * (1 - gt_prob_batch), dim=(1, 2, 3)),
             "FN": torch.sum((1 - predict_prob_batch) * gt_prob_batch, dim=(1, 2, 3))
         }
-
-    def calc_F1(self,
-                TP: float,
-                TN: float,
-                FP: float,
-                FN: float) -> float:
+    @staticmethod
+    def calc_F1(
+                TP ,
+                TN ,
+                FP ,
+                FN ):
         """
         compute F1 score
         """
@@ -131,7 +133,7 @@ class PixelAUC():
 
         return float(auc)
 
-    def calc_AUC_regular(self, gt_prob_batch: torch.Tensor, predict_prob_batch: torch.Tensor) -> List:
+    def calc_AUC_regular(self, gt_prob_batch: torch.Tensor, predict_prob_batch: torch.Tensor, id = 1) -> List:
         """
         Calculate AUC score for a batch of images.
         Args:
@@ -145,7 +147,12 @@ class PixelAUC():
         for i in range(gt_prob_batch.shape[0]):
             gt_prob = gt_prob_batch[i]
             predict_prob = predict_prob_batch[i]
-            auc_score = self.calc_single_AUC_regular2(gt_prob, predict_prob)
+            if id == 1:
+                auc_score = self.calc_single_AUC_regular(gt_prob, predict_prob)
+            elif id == 2:
+                auc_score = self.calc_single_AUC_regular2(gt_prob, predict_prob)
+            else:
+                raise ValueError("id must be 1 or 2")
             AUC_List.append(auc_score)
         return AUC_List
 
@@ -292,13 +299,13 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     predict_prob_batch = torch.tensor([
         # --- Image 1 ---
-        [[[1, 0, 1],
-        [0, 1, 0],
-        [1, 1, 0]]]
+        [[[0.8, 0.3, 0.6],
+        [0.1, 0.9, 0.3],
+        [0.6, 0.75, 0.2]]]
         # --- Image 2 ---
-        , [[[0, 1, 0],
-        [1, 0, 1],
-        [0, 0, 1]]]
+        , [[[0.4, 0.88, 0.33],
+        [0.77, 0.23, 0.82],
+        [0.22, 0.35, 0.79]]]
         ]
     , dtype=torch.float32).to(device)
 
@@ -316,21 +323,32 @@ if __name__ == "__main__":
 
     print(f"predict_prob_batch shape: {predict_prob_batch.shape}")
     print(f"gt_prob_batch shape: {gt_prob_batch.shape}")
-    pixel_f1 = PixelF1()
-    cm = pixel_f1.confuse_matrix(gt_prob_batch, predict_prob_batch)
+    print("=================================================")
+    predict_prob_batch_y = predict_prob_batch.clone()
+    predict_prob_batch_y[predict_prob_batch_y > 0.5] = 1
+    predict_prob_batch_y[predict_prob_batch_y <= 0.5] = 0
+    cm = PixelF1.confuse_matrix(gt_prob_batch, predict_prob_batch_y)
     print(f"Confusion Matrix: {cm}")
     # calculate F1 score based on all images in the batch
     TP = cm["TP"].sum().item()
     TN = cm["TN"].sum().item()
     FP = cm["FP"].sum().item()
     FN = cm["FN"].sum().item()
-    f1score = pixel_f1.calc_F1(TP, TN, FP, FN)
+    print(f"TP: {TP}, TN: {TN}, FP: {FP}, FN: {FN}")
+    # ==========================================================
+    f1score = PixelF1.calc_F1(TP, TN, FP, FN)
+    f1scores = PixelF1.calc_F1(TP=cm["TP"], TN=cm["TN"], FP=cm["FP"], FN=cm["FN"])
     print(f"F1 Score: {f1score:.4f}")
+    print(f"F1 Scores for each image: {f1scores}")
+    # average F1 score across the batch
+    avg_f1_score = torch.mean(f1scores).item()
+    print(f"Average F1 Score: {avg_f1_score:.4f}")
     # ==========================================================
     print("=================================================")
     pixel_auc = PixelAUC()
     print(f"AUC Scores by sklearn: {pixel_auc.calc_AUC_sklearn(gt_prob_batch, predict_prob_batch)}")
     print(f"AUC Scores by regular method: {pixel_auc.calc_AUC_regular(gt_prob_batch, predict_prob_batch)}")
+    print(f"AUC Scores by regular method2: {pixel_auc.calc_AUC_regular(gt_prob_batch, predict_prob_batch, 2)}")
     print("=================================================")
     dataset_auc = DatasetAUC(device="cuda:0" if torch.cuda.is_available() else "cpu")
     dataset_auc.add_batch(predict_prob_batch, gt_prob_batch)

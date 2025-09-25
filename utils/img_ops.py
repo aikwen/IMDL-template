@@ -1,85 +1,76 @@
 from PIL import Image
 import numpy as np
 import albumentations as albu
-from typing import Tuple, Optional
+from typing import Tuple, Union,List , TypeAlias
+
+Limits: TypeAlias = Union[tuple[int, int], tuple[float, float], None]
+
+class AUGTYPE:
+    def __init__(self, type: str, p: float, r: Limits=None):
+        self.type = type
+        self.p = p
+        self.r = r
+        self.__type = (
+            "rotate",
+            "v_flip",
+            "h_flip",
+            "resize",
+            "jpeg",
+            "gblur",
+            "gnoise",
+            "scale")
+        self.__check(type, p, r)
+
+    def __check(self, t:str, p:float, r:Limits=None):
+        assert isinstance(t, str)
+        assert t in self.__type, f"类型必须是{self.__check}中的一种"
+        assert isinstance(p, float)
+        assert p>=0 and p<=1, "概率 p 必须大于等于 0 小于等于 1"
+        assert r is None or (isinstance(r, tuple) and len(r) == 2)
+        if t in ("resize","jpeg","gblur","gnoise","scale"):
+            assert r is not None and isinstance(r, tuple) and len(r) == 2
+            if t in ("resize","jpeg", "gblur"):
+                assert isinstance(r[0], int) and isinstance(r[1], int)
 
 
-def augs_default(prob_Spatial=0.5, prob_Pixel=0.2, resize: Optional[Tuple[int, int]] = None):
-    # geometric transform
-    rotate = albu.RandomRotate90(p=prob_Spatial)
-    vertical_flip = albu.VerticalFlip(p=prob_Spatial)
-    horizontal_flip = albu.HorizontalFlip(p=prob_Spatial)
-    # Pixel transforms
-    jpeg_compression = albu.ImageCompression(quality_range=(70, 100), p=prob_Pixel)
-    gaussian_blur = albu.GaussianBlur(blur_limit=(3, 7), p=prob_Pixel)
-    # resize transform
-    crop = albu.Resize(height=resize[0], width=resize[1], p=1.0) if resize else albu.NoOp(p=1.0)
-    return albu.Compose([
-        crop,
-        rotate,
-        vertical_flip,
-        horizontal_flip,
-        jpeg_compression,
-        gaussian_blur,
-    ])
+def get_aug(aug_type: AUGTYPE):
+    p = aug_type.p
+    assert aug_type.r is not None
+    args0, args1 = aug_type.r
+    if aug_type.type   == "rotate":
+        # 随机旋转
+        return albu.RandomRotate90(p = p)
+    elif aug_type.type == "v_flip":
+        # 垂直翻转
+        return albu.VerticalFlip(p = p)
+    elif aug_type.type == "h_flip":
+        # 垂直翻转
+        return albu.HorizontalFlip(p = p)
+    elif aug_type.type == "resize":
+        # 改变尺寸
+        # args0 和 args1 分别表示height， width
+        assert isinstance(args0, int) and isinstance(args1, int)
+        return albu.Resize(height=args0, width=args1, p=p)
+    elif aug_type.type == "jpeg":
+        # jpeg 压缩
+        # 随机在 (args0, args1) 区间之间选择一个质量因子进行压缩
+        assert isinstance(args0, int) and isinstance(args1, int)
+        return albu.ImageCompression(quality_range=(args0, args1), p=p)
+    elif aug_type.type == "gblur":
+        # 高斯模糊
+        # 随机在 (args0, args1) 区间之间选择一个 kernal size
+        assert isinstance(args0, int) and isinstance(args1, int)
+        return albu.GaussianBlur(blur_limit=(args0, args1), p=p)
+    elif aug_type.type == "gnoise":
+        # 高斯噪声
+        #
+        return albu.GaussNoise(std_range=(args0, args1), p=p)
+    elif aug_type.type == "scale":
+        # 按比例缩放
+        # 随机在 (1+args0, 1+args1) 之间旋转一个值进行缩放
+        return albu.RandomScale(scale_limit=(args0, args1), p=p)
+    else:
+        return albu.NoOp(p=1)
 
-def postprocess(transform : albu.Compose):
-    def wrapper(img_array:np.ndarray, mask_array:np.ndarray):
-        """
-        args:
-            img (np.ndarray): input image
-            mask (np.ndarray): input mask
-        returns:
-            img_transformed (np.ndarray): transformed image
-            mask_transformed (np.ndarray): transformed "prob" mask
-
-        """
-        # Apply the transformations
-        transformed = transform(image=img_array, mask=mask_array)
-        img_transformed = transformed['image']
-        mask_transformed = transformed['mask']
-
-        # Convert mask to probability mask
-        if mask_transformed.max() > 1.0:
-            mask_transformed = mask_transformed.astype(np.float32) / 255.0
-            mask_transformed[mask_transformed > 0.5] = 1.0
-            mask_transformed[mask_transformed <= 0.5] = 0.0
-        return img_transformed, mask_transformed
-    return wrapper
-
-
-
-if __name__ == "__main__":
-    """
-    test
-    """
-    from utils.dataset import ImageDataset
-    import matplotlib.pyplot as plt
-    dataset = ImageDataset(r"./data/simple")
-    print(f"Dataset {dataset.dataset_name} loaded with {len(dataset)} items.")
-    for i in range(len(dataset)):
-        img, mask = dataset[i]
-        img = img.permute(1, 2, 0).byte().numpy()
-        mask = mask.byte().numpy()
-        images = [img, mask]
-
-        titles = ['Image', 'Mask']
-        fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))
-        print(f"img {i} shape:{img.shape}")
-        print(f"mask {i} shape:{mask.shape}")
-        postprocess_fn = postprocess(augs_default(prob_Spatial=1, prob_Pixel=1, resize=(256,256)))
-        img, mask = postprocess_fn(img, mask)
-        images.append(img)
-        images.append(mask)
-        titles.append('Transformed Image')
-        titles.append('Transformed prob Mask')
-        print("=================================================")
-        for ax, img, title in zip(axes.flatten(), images, titles):
-            img_array = np.asarray(img)
-            print(f"{i}: {title} shape: {img_array.shape}, pixel range: {img_array.min()} - {img_array.max()}")
-            ax.imshow(img_array, cmap='gray')
-            ax.set_title(title)
-            ax.axis('off')
-        plt.tight_layout()
-        plt.show()
-
+def aug_compose(aug_list:List[AUGTYPE]) -> albu.Compose:
+    return albu.Compose([get_aug(aug_type=item) for item in aug_list])
