@@ -1,0 +1,75 @@
+[datasets]
+# 所用到的所有数据集
+# 根目录下的相对路径, e.g.
+# datasetName1 = "data/example"
+# datasetName2 = "data/example2"
+simple = "data/simple"
+
+[train]
+
+#-------------------------------------------
+# 训练数据集配置
+#-------------------------------------------
+[train."dataset"]
+
+# 训练数据集, [datasets] 定义的子集
+training_set = ["simple"]
+# 验证数据集, [datasets] 定义的子集
+validation_set = ["simple"]
+
+#-------------------------------------------
+# 权重配置
+#-------------------------------------------
+[train."checkpoint"]
+
+# 指定权重输出文件夹
+checkpoint_dir = "checkpoint"
+# 是否断点续训, 加载某一次的权重继续训练
+# 1. ""        自动加载 checkpoint_dir 最新的权重
+# 2. "XXX.pth" 手动加载 checkpoint_dir 中的指定文件
+resuming_checkpoint = ""
+# resuming_checkpoint = "XXX.pth"
+
+#-------------------------------------------
+# 数据预处理
+#-------------------------------------------
+[train."preprocess"]
+# 有八种：
+# "rotate"，"v_flip", "h_flip", "resize", "jpeg", "gblur", "gnoise", "scale"
+# "rotate" 随机旋转
+# "v_flip" 垂直翻转
+# "h_flip" 水平翻转
+# "resize" 调整大小
+# "jpeg"   jepg 压缩
+# "gblur"  高斯模糊
+# "gnoise" 高斯噪声
+# "scale"  按比例缩放
+types_conf = [
+    {"type"="rotate", "probability"=0.5},
+    {"type"="v_flip", "probability"=0.5},
+    {"type"="v_flip", "probability"=0.5},
+    {"type"="resize", "probability"=1,   "size"=[512, 512]},
+    {"type"="jpeg"  , "probability"=0.3, "quality_range"=[70, 100]},
+    {"type"="gblur" , "probability"=0.3, "kernel_range"=[3, 15]},
+    {"type"="gnoise", "probability"=0.3, "std_range"=[0.0117,0.0588]},
+    {"type"="scale" , "probability"=0.3, "scale_limit"=[-0.25, 0.25]},
+]
+
+# 准备使用的预处理类型和顺序
+apply = [
+    "rotate",
+    "v_flip",
+    "h_flip",
+    "jpeg",
+    "gblur",
+    "gnoise",
+    "resize"
+]
+
+#--------------------------------------------
+# 基本配置
+#--------------------------------------------
+[train."base"]
+
+epochs = 30 # 训练轮次
+batchsize = 16 # 批量大小
