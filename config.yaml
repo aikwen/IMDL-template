@@ -1,0 +1,75 @@
+# 声明所有的数据集
+datasets:
+  - example: "data/simple"
+
+# p 参数表示使用这种增强的概率
+# 1. rotate, v_flip, h_flip 分别表示旋转，垂直翻转，水平翻转
+# 2. jepg 压缩
+#   quality_range 表示压缩质量区间，会随机在区间采样一个值，
+#   区间 [a, a] 左右两端点相同会选择质量因子 a 压缩
+# 3. gblur 高斯模糊
+#   kernel_range 表示高斯核区间，会随机在区间采样一个值，
+#   区间 [a, a] 左右两端点相同会选择高斯核大小 a 进行高斯模糊
+# 4. gnoise 高斯噪声
+#   std_range 略
+# 5. scale 缩放
+#   scale_limit: [a, b] 会随机在 [1+a, 1+b] 之间随机倍数缩放
+#   比如 [-0.25, 0.25] 就会在 [0.75, 0.75] 之间选择一个值缩放
+#   因为 [0.75, 0.75] 左右端点值相同，所以表示将图片缩小为原来的3/4
+# 6. resize 改变图像大小
+#   size:[height， width]
+preprocess:
+  rotate: {p: 0.5}
+  v_flip: {p: 0.5}
+  h_flip: {p: 0.5}
+  jpeg:
+    p: 0.3
+    quality_range: [70, 100]
+  gblur:
+    p: 0.3
+    kernel_range: [3, 15]
+  gnoise:
+    p: 0.3
+    std_range: [0.0117,0.0588]
+  scale:
+    p: 0.3
+    scale_limit: [-0.25, 0.25]
+  resize:
+    p: 1
+    size: [512, 512]
+
+# 训练配置
+train:
+  # 用到哪些训练数据集，在声明的数据集里面
+  training_set:
+    - example
+  # 选择对训练级哪些预处理方式，从上到下依次按顺序增强
+  train_preprocess:
+    - rotate
+    - v_flip
+    - h_flip
+    - jpeg
+    - gblur
+    - resize
+
+  # 验证数据集
+  validation_set:
+    - example
+  val_process:
+    - resize
+  # 权重设置
+  # dir 输出文件夹，相对于根项目路径,不存在会自动创建
+  # resuming_checkpoint 是否要断点续训，
+  #   false： 重新开始训练
+  #   true： 会自动在最新的权重文件上训练
+  #   XXX.pt 在某个确切的权重文件上继续训练
+  check_points:
+    dir: checkpoints
+    resuming_checkpoint: false
+
+  # 基本配置
+  base:
+    epochs: 30
+    batchsize: 16
+
+
