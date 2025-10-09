@@ -2,3 +2,4 @@ albumentationsx
 pillow
 matplotlib
 scikit-learn
+PyYAML
