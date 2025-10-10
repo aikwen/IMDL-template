@@ -97,7 +97,9 @@ class ImageDataset(Dataset):
             if gt_path is not None:
                 gt_img = Image.open(gt_path).convert("L")  # Convert mask to grayscale
             else:
-                gt_img = Image.fromarray(np.zeros(tp_img.size, dtype=np.uint8))
+                # tp_img.size return (width, height)
+                w, h = tp_img.size
+                gt_img = Image.fromarray(np.zeros((h, w), dtype=np.uint8))
         except FileNotFoundError as e:
             print(f"File not found: {tp_path} or {gt_path}")
             raise e
@@ -127,8 +129,8 @@ class ImageDataset(Dataset):
             gt_array[gt_array <= 0.5] = 0.0
 
         # to tensor
-        tp_tensor = torch.tensor(tp_array, dtype=torch.float32).permute(2, 0, 1)  # Convert to CxHxW
-        gt_tensor = torch.tensor(gt_array, dtype=torch.float32)
+        tp_tensor = torch.from_numpy(tp_array).to(torch.float32).permute(2, 0, 1) # Convert to CxHxW
+        gt_tensor = torch.from_numpy(gt_array).to(torch.float32)
         return tp_tensor, gt_tensor, tp_name, gt_name
 
 if __name__ == "__main__":
