@@ -71,5 +71,20 @@ train:
   base:
     epochs: 30
     batchsize: 16
+    # adamw 优化器
+    adamw:
+      # 3e-4 ~ 1e-3
+      lr: 0.001
+      # 1e-4 ~ 0.1
+      weight_decay: 0.01
+    #  poly 学习率调整
+    polynomialLR:
+      # power > 1 凸
+      # power < 1 凹
+      power: 0.9
+
+
+
+
 
 
